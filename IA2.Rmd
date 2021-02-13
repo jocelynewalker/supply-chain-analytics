@@ -1,0 +1,238 @@
+---
+title: "Jocelyne Walker jvw359 IA#2"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+***
+<center>
+## Individual Assignment #2: ARIMA Lab.
+#### Due: Nov. 23 by 12:00 noon
+#### (40 points)
+</center>
+***
+
+The file titled **US Retail Sales.csv** includes three time series as follows:
+  
+* GROC: US grocery stores sales,  
+* RETAIL: US retail sales (Total), and  
+* ECOMM: US Ecommerce sales.
+
+In the following code box we read the CSV file and set up the data as a *tsible* and then we plot it to examine it
+
+```{r}
+library(fpp3)
+
+D <- read.csv("US Retail Sales.csv") %>% 
+  mutate(DATE = yearquarter(mdy(DATE)),
+         RETAIL = as.numeric(RETAIL),
+         GROC  = as.numeric(GROC),
+         ECOMM = ifelse(is.na(ECOMM),0,as.numeric(ECOMM))) %>%
+  gather("SECTOR", "SALES", RETAIL, GROC, ECOMM) %>%
+  as_tsibble(index = DATE, key = "SECTOR")
+  
+D %>% autoplot(SALES) + 
+  facet_grid(vars(SECTOR), scales = "free_y")
+```
+
+We are interested in developing a long-term quarterly forecating model (20 quarters) for the national sales of each of the three sectors in the data set.  For this purpose we subset the data into *training* and *testing* sets as follows:
+
+```{r}
+# Training Set
+TR <- D %>% filter(DATE <= yearquarter("2014 Q4"))
+# Testing Set
+TE <- D %>% filter(DATE >= yearquarter("2015 Q1"))
+```
+
+1. Using the automatic selection feature in *fable* fit an ARIMA and an ETS model for each of the three time series (six models in total).  Report the name/order of each model and the corresponding AICc and BIC.
+
+```{r}
+library(fpp3)
+m <- TR %>% model(m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+
+m %>% filter(SECTOR == 'ECOMM') %>% select(m1) %>% gg_tsresiduals()
+
+print(m$SECTOR)
+print(m$m1)
+print(m$m2)
+
+m%>%glance()
+
+m %>% select(m1) %>% glance()
+m %>% select(m2) %>% glance()
+```
+
+I fit the six models on the training data. Here's a summary of the model results:
+
+a. **ECOMM ARIMA Model** ARIMA(0,1,0)(0,1,0) with AICc = 1518 and BIC = 1520
+
+b. **ECOMM ETS Model** ETS(A,A,A) with AICc = 1799 and BIC = 1819
+
+c. **GROC ARIMA Model** ARIMA(0,1,0)(0,1,1) with AICc = 1468 and BIC = 1473
+
+d. **GROC ETS Model** ETS(M,A,A) with AICc= 1698 and BIC = 1719
+
+e. **RETAIL ARIMA Model** ARIMA(2,0,1)(0,1,1) with drift with AICc = 1969 and BIC = 1981
+
+f. **RETAIL ETS Model** ETS(M,A,M) with AICc = 2202 and BIC = 2222.
+
+In all three series' models, the ARIMA models have lower and better error statistics. 
+
+
+2. Examine the residuals of all the models using the Ljung-Box test and the **gg_tsresiduals()** function. Is there a validity problem with any of the models?
+
+```{r}
+ecomm_TR <- TR %>% filter(SECTOR == 'ECOMM')
+ecomm_TE <- TE %>% filter(SECTOR == 'ECOMM')
+ecomm_m <- ecomm_TR %>% model(m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+groc_TR <- TR %>% filter(SECTOR == 'GROC')
+groc_TE <- TE %>% filter(SECTOR == 'GROC')
+groc_m <- groc_TR %>% model(m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+retail_TR <- TR %>% filter(SECTOR == 'RETAIL')
+retail_TE <- TE %>% filter(SECTOR == 'RETAIL')
+retail_m <- retail_TR %>% model(m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+
+m %>% augment() %>%
+  features(.resid, ljung_box, lag = 8)
+
+ecomm_m %>% augment() %>%
+  features(.resid, ljung_box, lag = 8)
+
+groc_m %>% augment() %>%
+  features(.resid, ljung_box, lag = 8)
+
+retail_m %>% augment() %>%
+  features(.resid, ljung_box, lag = 8)
+
+ecomm_m %>% select(m1) %>% gg_tsresiduals()
+ecomm_m %>% select(m2) %>% gg_tsresiduals()
+
+groc_m %>% select(m1) %>% gg_tsresiduals()
+groc_m %>% select(m2) %>% gg_tsresiduals()
+
+retail_m %>% select(m1) %>% gg_tsresiduals()
+retail_m %>% select(m2) %>% gg_tsresiduals()
+```
+In the Ljung-box test, you want a HIGH p-value. This is because the null hypothesis states that the residuals are uncorrelated. So we want a high p-value so we can fail to reject' the null. 
+
+There are two models with validity problems: (1) the ECOMM ARIMA model and (2) the ECOMM ETS model. 
+
+
+3. For each of the models with validity problems, find an alternate model making manual order and/or model-type selections. For the model(s) selected, report the model name/order, AICc, BIC, and examine the residuals.
+
+```{r}
+library(fpp3)
+ecomm_m_update <- ecomm_TR %>% model(m1 = ARIMA(SALES ~ pdq(2,1,0) + PDQ(2,1,0)),
+                 m2 = ETS(SALES ~ trend("Ad")))
+
+ecomm_m_update %>% augment() %>%
+  features(.resid, ljung_box, lag = 8)
+
+#groc_m_update <- groc_TR %>% model(m1 = ARIMA(SALES ~ pdq(0,1,0) + PDQ(0,1,2)))
+
+#groc_m_update %>% augment() %>%
+ # features(.resid, ljung_box, lag = 10)
+```
+
+
+The ECOMM ETS model had no solutions that resulted in a non-significant p-value. Thus, for ECOMM, ETS models are not valid.
+
+4. For the set of six models selected (automatically and/or manually) prepare 20 quarter forecasts and examine the *training* and *testing* accuracy metrics.  Based on a holistic analysis of the information criteria, MAE and MAPE, select the best model for each **SECTOR** and report the model name/order and their parameter values.
+
+```{r}
+#ecomm models
+ecomm_m_update <- ecomm_TR %>% model(m1 = ARIMA(SALES ~   pdq(2,1,0) + PDQ(2,1,0)),
+                 m2 = ETS(SALES ~ trend("Ad")),
+                 m3 = ARIMA(SALES),
+                 m4 = ETS(SALES))
+
+ecomm_m_update %>% glance()
+ecomm_m_update %>% accuracy()
+
+ecomm_f <- ecomm_m_update %>% forecast(h=20)
+ecomm_f %>% accuracy(ecomm_TE)
+
+ecomm_m_update %>% select(m1) %>% report()
+
+#best model for ecomm is ARIMA(2,1,0)(2,1,0)
+
+#groc models
+groc_m_update <- groc_TR %>% model(m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+
+groc_m_update %>% glance()
+groc_m_update %>% accuracy()
+
+groc_f <- groc_m_update %>% forecast(h=20)
+groc_f %>% accuracy(groc_TE)
+
+groc_m_update %>% select(m1) %>% report()
+
+
+#best model for groc is ARIMA(0,1,0)(0,1,1)
+
+#retail models
+retail_m_update <- retail_TR %>% model(
+                 m1 = ARIMA(SALES),
+                 m2 = ETS(SALES))
+
+retail_m_update %>% glance()
+retail_m_update %>% accuracy()
+
+retail_f <- retail_m_update %>% forecast(h=20)
+retail_f %>% accuracy(retail_TE)
+
+retail_m_update %>% select(m2) %>% report()
+
+
+#best model for retail is ETS(M,A,M) from testing MAE and MAPE
+
+```
+
+* **ECOMM:** Best model is ARIMA(2,1,0)(2,1,0). This model has no auto-correlated residual problems. It has the lowest AICc and second-lowest BIC, along with the lowest training and testing MAE and MAPE. 
+
+* **GROC:** Best model is ARIMA(0,1,0)(0,1,1). It has the lowest AICc and BIC (only slightly worse than the model with some validity problems). Similarly, it has the lowest training MAE and MAPE and the lowest testing MAE and lowest testing MAPE. 
+
+* **RETAIL:** Best model is ETS(M,A,M). This model has no auto-correlated residual problems. While its AICc and BIC and training MAE and MAPE are slightly worse than the ARIMA model, it has the best testing MAE and testing MAPE. 
+
+
+5. For any ARIMA model in (4) write the corresponding B-polynomial.
+
+I'll write the B-polynomial for the ECOMM ARIMA Model (2,1,0)(2,1,0)[4]
+
+$(1 - \phi_1B - \phi_2B^2)(1-\Phi_1B^4-\Phi_2B^8)(1-B)(1-B^4)y_t = e_t$
+
+6. Plot the best forecast for each **SECTOR**, their 80% and 95% confidence intervals and overlay the testing data. 
+
+```{r}
+library(fpp3)
+
+ecomm_f %>% filter(.model == "m1") %>%
+  autoplot() +
+  geom_point(data = ecomm_TE, mapping = aes(y = SALES)) +
+  ggtitle("Ecomm Forecast")
+
+groc_f %>% filter(.model == "m1") %>%
+  autoplot() +
+  geom_point(data = groc_TE, mapping = aes(y = SALES)) +
+  ggtitle("Grocery Forecast")
+
+retail_f %>% filter(.model == "m2") %>%
+  autoplot() +
+  geom_point(data = retail_TE, mapping = aes(y = SALES)) +
+  ggtitle("Retail Forecast")
+
+```
+
+
+
+
+
+
+
